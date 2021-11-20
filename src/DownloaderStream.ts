@@ -15,6 +15,27 @@ class DownloaderStream {
     this.fileSize = size;
   }
 
+  handlePushDataSuccess(event: MessageEvent<{ type: "push"; data: number }>) {
+    const response = event.data;
+
+    console.log(`Push data success (${response.data} byte)`);
+    this.currentSize += response.data;
+
+    // Auto download when current size >= 8 bytes.
+    // If data in Readable stream < 8 bytes, browser will not download this stream
+    if (this.currentSize >= DownloaderStream.MIN_SIZE && !this.isDownloaded) {
+      const newIframe = document.createElement("iframe");
+      newIframe.src = this.urlDownload;
+      newIframe.hidden = true;
+      document.body.appendChild(newIframe);
+      this.isDownloaded = true;
+
+      setTimeout(() => {
+        document.body.removeChild(newIframe);
+      }, 3000);
+    }
+  }
+
   async setUpDownload(): Promise<boolean> {
     if (navigator.serviceWorker) {
       const sw = (await navigator.serviceWorker.ready).active;
@@ -57,37 +78,30 @@ class DownloaderStream {
       return false;
     }
 
-    this.currentSize += data.byteLength;
-
-    // Auto download when current size > 8.
-    // when data in Readable stream < 8, browser will not download
-    if (this.currentSize > DownloaderStream.MIN_SIZE && !this.isDownloaded) {
-      const newIframe = document.createElement("iframe");
-      newIframe.src = this.urlDownload;
-      newIframe.hidden = true;
-      document.body.appendChild(newIframe);
-      this.isDownloaded = true;
-
-      setTimeout(() => {
-        document.body.removeChild(newIframe);
-      }, 3000);
-    }
-
-    console.log("push data success");
     const action: SWAction = { type: "push", data };
+    this.port.addEventListener("message", this.handlePushDataSuccess.bind(this));
     this.port.postMessage(action, [action.data as ArrayBuffer]);
+
     return true;
   }
 
   async close(): Promise<boolean> {
-    if (!this.urlDownload || !this.port) {
+    const port = this.port;
+
+    if (!this.urlDownload || !port) {
       console.log("close failed");
       return false;
     }
 
     const action: SWAction = { type: "close", data: null };
 
-    this.port.postMessage(action);
+    port.postMessage(action);
+    port.addEventListener("message", (event: MessageEvent<{ type: "close" }>) => {
+      if (event.data.type === "close") {
+        console.log("Close success");
+        port?.removeEventListener("message", this.handlePushDataSuccess);
+      }
+    });
     return true;
   }
 }

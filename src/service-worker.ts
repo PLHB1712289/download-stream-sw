@@ -45,6 +45,13 @@ self.addEventListener("fetch", (event) => {
     const response = new Response(stream, { status: 200, headers });
     event.respondWith(response);
     listURLSetup.delete(url);
+
+    // ?? What happen if user do not accept download
+    // - In ReadableStream, we have ReadableStream.locked
+    //   If ReadableStream.locked still false, it mean browser do not use this stream.
+    //
+    // ?? What happen if user accept download and cacel it afterwards
+    // - Ooooppssss - damn user :))))
     return;
   }
 
@@ -85,15 +92,17 @@ function createStream(port: MessagePort): ReadableStream {
         }
 
         if (action.type === "push") {
-          controller.enqueue(new Uint8Array(action.data));
-          port.postMessage({ type: "push", data: true } as SWResponse);
+          const data = new Uint8Array(action.data);
+          controller.enqueue(data);
+          console.log("sw " + stream.locked);
+          port.postMessage({ type: "push", data: data.length } as SWResponse);
           return;
         }
 
         if (action.type === "close") {
           console.log("close...");
           controller.close();
-          port.postMessage({ type: "close", data: true } as SWResponse);
+          port.postMessage({ type: "close" } as SWResponse);
           return;
         }
       };
